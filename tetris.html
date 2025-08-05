@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>HTML5 테트리스</title>
+  <style>
+    body { background: #222; color: #fff; text-align: center; }
+    canvas { background: #111; display: block; margin: 20px auto; }
+    #score { font-size: 1.5em; margin-top: 10px; }
+    #gameover { color: #ff4444; font-size: 2em; margin-top: 20px; display: none; }
+  </style>
+</head>
+<body>
+  <h1>테트리스</h1>
+  <canvas id="tetris" width="300" height="600"></canvas>
+  <div id="score">점수: 0</div>
+  <div id="gameover">게임 오버!</div>
+  <script>
+    // 설정
+    const COLS = 10, ROWS = 20, BLOCK = 30;
+    // 더 화려한 색상 팔레트
+    const COLORS = [
+      null,
+      'linear-gradient(135deg, #00fff0 0%, #00bfff 100%)', // I
+      'linear-gradient(135deg, #0040ff 0%, #00e0ff 100%)', // J
+      'linear-gradient(135deg, #ffb347 0%, #ffcc33 100%)', // L
+      'linear-gradient(135deg, #fff700 0%, #ffe259 100%)', // O
+      'linear-gradient(135deg, #00ff87 0%, #60efff 100%)', // S
+      'linear-gradient(135deg, #a770ef 0%, #f6d365 100%)', // T
+      'linear-gradient(135deg, #ff5858 0%, #f09819 100%)'  // Z
+    ];
+    const SHAPES = [
+      [],
+      [[1,1,1,1]], // I
+      [[2,0,0],[2,2,2]], // J
+      [[0,0,3],[3,3,3]], // L
+      [[4,4],[4,4]], // O
+      [[0,5,5],[5,5,0]], // S
+      [[0,6,0],[6,6,6]], // T
+      [[7,7,0],[0,7,7]]  // Z
+    ];
+
+    // 캔버스
+    const canvas = document.getElementById('tetris');
+    const ctx = canvas.getContext('2d');
+    ctx.scale(BLOCK, BLOCK);
+
+    // 필드 생성
+    function createMatrix(w, h) {
+      const matrix = [];
+      while (h--) matrix.push(new Array(w).fill(0));
+      return matrix;
+    }
+
+    // 블록 생성
+    function createPiece(type) {
+      return SHAPES[type].map(row => row.slice());
+    }
+
+    // 충돌 체크
+    function collide(field, piece, pos) {
+      for (let y = 0; y < piece.length; ++y) {
+        for (let x = 0; x < piece[y].length; ++x) {
+          if (piece[y][x] &&
+              (field[y + pos.y] && field[y + pos.y][x + pos.x]) !== 0) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    // 필드에 블록 고정
+    function merge(field, piece, pos) {
+      piece.forEach((row, y) => {
+        row.forEach((val, x) => {
+          if (val) field[y + pos.y][x + pos.x] = val;
+        });
+      });
+    }
+
+    // 한 줄 삭제
+    function sweep() {
+      let rowCount = 0;
+      outer: for (let y = field.length - 1; y >= 0; --y) {
+        for (let x = 0; x < COLS; ++x) {
+          if (!field[y][x]) continue outer;
+        }
+        const row = field.splice(y, 1)[0].fill(0);
+        field.unshift(row);
+        ++rowCount;
+        ++y;
+      }
+      if (rowCount) {
+        score += rowCount * 10;
+        document.getElementById('score').textContent = '점수: ' + score;
+      }
+    }
+
+    // 블록 회전
+    function rotate(matrix) {
+      for (let y = 0; y < matrix.length; ++y) {
+        for (let x = 0; x < y; ++x) {
+          [matrix[x][y], matrix[y][x]] = [matrix[y][x], matrix[x][y]];
+        }
+      }
+      matrix.forEach(row => row.reverse());
+    }
+
+    // 실제 색상값으로 변환 (캔버스에서는 그라디언트 객체 사용)
+    function getBlockFillStyle(val, x, y) {
+      if (!val) return null;
+      // 각 블록마다 고유 그라디언트
+      switch (val) {
+        case 1: { // I
+          let grad = ctx.createLinearGradient(x, y, x+1, y+1);
+          grad.addColorStop(0, "#00fff0");
+          grad.addColorStop(1, "#00bfff");
+          return grad;
+        }
+        case 2: { // J
+          let grad = ctx.createLinearGradient(x, y, x+1, y+1);
+          grad.addColorStop(0, "#0040ff");
+          grad.addColorStop(1, "#00e0ff");
+          return grad;
+        }
+        case 3: { // L
+          let grad = ctx.createLinearGradient(x, y, x+1, y+1);
+          grad.addColorStop(0, "#ffb347");
+          grad.addColorStop(1, "#ffcc33");
+          return grad;
+        }
+        case 4: { // O
+          let grad = ctx.createLinearGradient(x, y, x+1, y+1);
+          grad.addColorStop(0, "#fff700");
+          grad.addColorStop(1, "#ffe259");
+          return grad;
+        }
+        case 5: { // S
+          let grad = ctx.createLinearGradient(x, y, x+1, y+1);
+          grad.addColorStop(0, "#00ff87");
+          grad.addColorStop(1, "#60efff");
+          return grad;
+        }
+        case 6: { // T
+          let grad = ctx.createLinearGradient(x, y, x+1, y+1);
+          grad.addColorStop(0, "#a770ef");
+          grad.addColorStop(1, "#f6d365");
+          return grad;
+        }
+        case 7: { // Z
+          let grad = ctx.createLinearGradient(x, y, x+1, y+1);
+          grad.addColorStop(0, "#ff5858");
+          grad.addColorStop(1, "#f09819");
+          return grad;
+        }
+        default: return "#fff";
+      }
+    }
+
+    // 블록 그리기
+    function drawMatrix(matrix, offset) {
+      matrix.forEach((row, y) => {
+        row.forEach((val, x) => {
+          if (val) {
+            ctx.save();
+            ctx.fillStyle = getBlockFillStyle(val, x + offset.x, y + offset.y);
+            ctx.fillRect(x + offset.x, y + offset.y, 1, 1);
+            ctx.strokeStyle = "#fff";
+            ctx.lineWidth = 0.07;
+            ctx.strokeRect(x + offset.x, y + offset.y, 1, 1);
+            ctx.restore();
+          }
+        });
+      });
+    }
+
+    // 전체 그리기
+    function draw() {
+      ctx.fillStyle = '#111';
+      ctx.fillRect(0, 0, COLS, ROWS);
+      drawMatrix(field, {x:0, y:0});
+      drawMatrix(piece.matrix, piece.pos);
+    }
+
+    // 새 블록
+    function newPiece() {
+      const type = Math.floor(Math.random() * (SHAPES.length - 1)) + 1;
+      piece.matrix = createPiece(type);
+      piece.pos = {x: Math.floor(COLS/2) - Math.floor(piece.matrix[0].length/2), y: 0};
+      if (collide(field, piece.matrix, piece.pos)) {
+        document.getElementById('gameover').style.display = 'block';
+        running = false;
+      }
+    }
+
+    // 게임 루프
+    let field, piece, dropCounter, dropInterval, lastTime, score, running;
+
+    function startGame() {
+      field = createMatrix(COLS, ROWS);
+      piece = {matrix: null, pos: {x:0, y:0}};
+      dropCounter = 0;
+      dropInterval = 500;
+      lastTime = 0;
+      score = 0;
+      running = true;
+      document.getElementById('score').textContent = '점수: 0';
+      document.getElementById('gameover').style.display = 'none';
+      newPiece();
+      update();
+    }
+
+    function update(time = 0) {
+      if (!running) return;
+      const delta = time - lastTime;
+      lastTime = time;
+      dropCounter += delta;
+      if (dropCounter > dropInterval) {
+        piece.pos.y++;
+        if (collide(field, piece.matrix, piece.pos)) {
+          piece.pos.y--;
+          merge(field, piece.matrix, piece.pos);
+          sweep();
+          newPiece();
+        }
+        dropCounter = 0;
+      }
+      draw();
+      requestAnimationFrame(update);
+    }
+
+    // 키 입력
+    document.addEventListener('keydown', e => {
+      if (!running) return;
+      if (e.key === 'ArrowLeft') {
+        piece.pos.x--;
+        if (collide(field, piece.matrix, piece.pos)) piece.pos.x++;
+      } else if (e.key === 'ArrowRight') {
+        piece.pos.x++;
+        if (collide(field, piece.matrix, piece.pos)) piece.pos.x--;
+      } else if (e.key === 'ArrowDown') {
+        piece.pos.y++;
+        if (collide(field, piece.matrix, piece.pos)) piece.pos.y--;
+      } else if (e.key === 'ArrowUp') {
+        // 블록 회전 - 원래 모양 유지하면서 회전
+        const old = piece.matrix.map(row => row.slice());
+        rotate(piece.matrix);
+        if (collide(field, piece.matrix, piece.pos)) {
+          // 충돌하면 원래 모양으로 복원
+          piece.matrix = old;
+        }
+      }
+    });
+
+    window.onload = startGame;
+    </script>
+</body>
+</html>
